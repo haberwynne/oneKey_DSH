@@ -24,7 +24,8 @@
 - **环境自检**：检测 `npx` 是否存在，缺失时给出明确的安装指引
 - **Edge 路径自动探测**：依次检查多个常见安装位置与注册表，不做硬编码
 - **端口可配**：默认 `3080`，也支持命令行传参
-- **超时保护**：默认等待 30 次（约 60 秒），超时给出日志路径便于排查
+- **免交互安装**：`npx` 带 `--yes`，包未缓存时自动确认安装，不会卡在确认提示上
+- **超时保护**：默认等待 60 次（约 2 分钟），超时时直接打印日志尾部内容
 - **零依赖**：纯 BAT 实现，不引入任何第三方工具
 
 ## 环境要求
@@ -32,26 +33,27 @@
 | 项目 | 要求 |
 |------|------|
 | 操作系统 | Windows 10 / 11（在 Windows 11 上实测通过） |
-| Node.js | 已安装并加入 PATH（需包含 `npx`），建议 LTS 版本 |
+| Node.js | 已安装并加入 PATH（需包含 `npx`），建议 **22.19.0 或更高**（部分依赖要求 `>=22.19.0`） |
 | 浏览器 | Microsoft Edge（用于应用模式；缺失时回退到默认浏览器） |
 | 网络 | 首次运行需联网，`npx` 会拉取 `@deepseek-ai/dsh` 包 |
 
 ## 快速开始
 
-1. 确认已安装 Node.js：在终端执行 `node -v` 与 `npx -v`，两条命令都应正常输出版本号
+1. 确认已安装 Node.js：在终端执行 `node -v` 与 `npx -v`，两条命令都应正常输出版本号（`node` 建议 22.19.0 以上）
 2. 下载 `oneKey_DSH.bat` 到任意目录
 3. 双击运行
 
-脚本会依次输出四个步骤的进度：
+脚本会依次输出四个步骤的进度，等待服务就绪期间会持续打印小圆点表示心跳：
 
 ```
 [1/4] 正在清理占用端口 3080 的旧进程...
 [2/4] 正在启动 DeepSeek Harness 服务 (端口 3080)...
-[3/4] 正在等待服务就绪...
+[3/4] 正在等待服务就绪 (首次运行需下载依赖, 可能较慢)
+.....
 [4/4] 正在以独立窗口打开界面...
 ```
 
-稍等片刻，一个不带地址栏的 Edge 窗口会弹出并载入 DSH 的 Web UI。
+首次运行需要联网下载 `@deepseek-ai/dsh` 包，可能要等一到两分钟；之后有缓存，通常几秒即可。稍等片刻，一个不带地址栏的 Edge 窗口会弹出并载入 DSH 的 Web UI。
 
 ### 指定端口
 
@@ -70,11 +72,15 @@ oneKey_DSH.bat 8080
 | 0 | 环境自检 | `where npx` 检测 Node.js 环境，缺失则提示并退出 |
 | 1 | 探测 Edge | 遍历 `%ProgramFiles(x86)%`、`%ProgramFiles%`、`%LocalAppData%` 三个路径，再查注册表 `App Paths\msedge.exe` |
 | 2 | 清理现场 | `netstat -ano` 找出占用目标端口的 PID 并 `taskkill`，删除旧日志 |
-| 3 | 后台启动 | `start /min cmd /c` 以最小化窗口启动 `npx @deepseek-ai/dsh web --port <PORT> --no-open`，stdout/stderr 重定向到 `%TEMP%\dsh_start.log` |
-| 4 | 轮询等待 | 每 2 秒用 `findstr` 在日志里搜 `dsh web: http://`，取第 3 个 token 即完整地址；最多等 30 轮 |
+| 3 | 后台启动 | `start /min cmd /c` 以最小化窗口启动 `npx --yes @deepseek-ai/dsh web --port <PORT> --no-open`，stdout/stderr 重定向到 `%TEMP%\dsh_start.log` |
+| 4 | 轮询等待 | 每约 2 秒用 `findstr` 在日志里搜 `dsh web: http://`，取第 3 个 token 即完整地址；最多等 60 轮 |
 | 5 | 打开窗口 | `start "" msedge.exe --app="<完整地址>"` |
 
-> 关键点是 `--no-open`：让 DSH 不要自己打开浏览器，改由脚本在拿到带 token 的地址后，用应用模式打开。
+这里有三个容易踩坑的关键点：
+
+- `--no-open`：让 DSH 不要自己打开浏览器，改由脚本在拿到带 token 的地址后，用应用模式打开。
+- `--yes`：`npx` 在包未缓存时会交互式询问 `Ok to proceed? (y)`。本脚本把输出重定向到日志，提示既看不见也无法回答，进程会**永久挂起**直到超时 —— 必须用 `--yes` 免去交互。
+- 延时用 `ping -n` 而非 `timeout`：`timeout` 在 stdin 被重定向的场景下会直接报 `Input redirection is not supported` 并退出，`ping` 无此限制。
 
 ## 配置项
 
@@ -84,7 +90,7 @@ oneKey_DSH.bat 8080
 |------|------|--------|
 | `PORT` | DSH 服务监听端口 | `3080` |
 | `LOG_FILE` | 服务日志文件路径 | `%TEMP%\dsh_start.log` |
-| `MAX_WAIT` | 等待服务就绪的最大轮数（每轮 2 秒） | `30` |
+| `MAX_WAIT` | 等待服务就绪的最大轮数（每轮约 2 秒） | `60` |
 
 如 Edge 不在常见位置，脚本会尝试读注册表；仍找不到时会回退用系统默认浏览器打开。
 
@@ -96,11 +102,14 @@ oneKey_DSH.bat 8080
 
 ### 服务启动超时？
 
-脚本会打印日志路径（默认 `%TEMP%\dsh_start.log`）。常见原因：
+脚本会把日志尾部内容**直接回显到窗口**，并打印完整日志路径，便于当场判断。常见表现对照：
 
-- 首次运行需要联网下载 `@deepseek-ai/dsh` 包，耗时较长 —— 可把 `MAX_WAIT` 调大
-- 网络不通或 npm registry 不可达
-- `npx` 弹出了需要交互确认的提示 —— 先在终端手动跑一次 `npx @deepseek-ai/dsh web` 完成缓存
+| 日志表现 | 含义 | 处理 |
+|----------|------|------|
+| `Ok to proceed? (y)` | npx 在等交互确认安装，而提示不可见 | 使用带 `--yes` 的当前版本脚本；若仍出现，说明用的是旧版 |
+| 只有下载进度、无报错 | 首次拉包太慢 | 调大 `MAX_WAIT`，或先在终端跑一次 `npx --yes @deepseek-ai/dsh web` 预热缓存 |
+| `ETIMEDOUT` / `ECONNREFUSED` | 网络不通 | 检查网络或 npm registry 配置 |
+| `EBADENGINE` 之后无输出 | Node 版本低于依赖要求 | 升级 Node.js 到 22.19.0 或更高 |
 
 ### 打开了浏览器标签页而不是独立窗口？
 
