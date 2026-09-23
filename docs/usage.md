@@ -101,7 +101,7 @@ set "MAX_WAIT=30"
 |------|------|----------|
 | `PORT` | 服务监听端口 | 被占用时换一个，如 `8080` |
 | `LOG_FILE` | 日志输出路径 | 想长期留档可改到非临时目录 |
-| `MAX_WAIT` | 最大等待轮数（每轮 2 秒） | 首次运行慢，可调到 `60`（2 分钟） |
+| `MAX_WAIT` | 最大等待轮数（每轮约 2 秒） | 默认 `60`（约 2 分钟）；首次运行慢可再调大 |
 
 ### 固定 Edge 路径
 
@@ -112,6 +112,46 @@ set "EDGE_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 ```
 
 查看 Edge 实际位置的方法：打开 Edge，地址栏输入 `edge://version`，看「可执行文件路径」一行。
+
+---
+
+## 三个关键实现细节
+
+这三个点都是实际调试中踩出来的坑，改动脚本时务必保留。
+
+### 1. `npx` 必须带 `--yes`
+
+包未缓存时，`npx` 会先问一句：
+
+```
+Need to install the following packages:
+@deepseek-ai/dsh@0.1.5-rc.3
+Ok to proceed? (y)
+```
+
+而本脚本用 `start /min cmd /c "... > 日志 2>&1"` 启动，这个提示被重定向进了日志文件 —— 窗口里看不见，也没法敲 `y`。结果就是进程**一直挂着等输入**，脚本轮询到超时。
+
+加上 `--yes` 后 npx 自动确认，问题消失。
+
+### 2. 延时用 `ping`，不要用 `timeout`
+
+`timeout.exe` 需要一个交互式控制台。当脚本被别的程序调用、或 stdin 被重定向时，它会直接报错退出：
+
+```
+ERROR: Input redirection is not supported, exiting the process immediately.
+```
+
+这会让轮询循环空转、瞬间跑满 `MAX_WAIT` 然后误报超时。改用经典的 `ping -n <秒数+1> 127.0.0.1 >nul` 做延时，在任何场景下都可靠。
+
+### 3. 别把含 `(x86)` 的值展开进 `( ... )` 代码块
+
+`%ProgramFiles(x86)%` 展开后形如 `C:\Program Files (x86)\...`。如果这行代码位于 `( ... )` 块内，值里的 `)` 会被当成块的结束符，导致：
+
+```
+\Microsoft\Edge\Application\msedge.exe) was unexpected at this time.
+```
+
+所以脚本里凡是涉及 `EDGE_PATH` 的分支都改用了 `goto`，而不是 `if (...) else (...)`。
 
 ---
 
@@ -141,10 +181,13 @@ type "%TEMP%\dsh_start.log"
 
 | 日志表现 | 含义 | 处理 |
 |----------|------|------|
-| 只有下载进度条 | 首次拉包太慢 | 调大 `MAX_WAIT`，或先手动 `npx` 缓存一次 |
+| 只有下载进度条 | 首次拉包太慢 | 调大 `MAX_WAIT`，或先手动跑 `npx --yes @deepseek-ai/dsh web` 预热缓存 |
 | `ETIMEDOUT` / `ECONNREFUSED` | 网络不通 | 检查网络或 npm registry 配置 |
-| 停在 `Need to install the following packages` | npx 在等交互确认 | 终端里手动跑一次完成确认 |
+| `Ok to proceed? (y)` | npx 在等交互确认（旧版脚本） | 换用带 `--yes` 的当前版本脚本 |
+| `EBADENGINE` 后无输出 | Node 版本低于依赖要求 | 升级 Node.js 到 22.19.0 或更高 |
 | 端口占用报错 | `[2]` 步没杀干净 | 换个 `PORT`，或手动 `netstat -ano \| findstr ":3080 "` 找 PID 杀 |
+
+> 当前版本的脚本在超时时会**自动把日志尾部回显到窗口**，多数情况下不需要再手动去开日志文件。
 
 ### Q3：打开的窗口有地址栏
 
