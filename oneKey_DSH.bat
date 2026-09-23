@@ -13,13 +13,17 @@ title DeepSeek Harness 一键启动 (oneKey_DSH)
 ::        oneKey_DSH.bat 8080       指定端口
 ::
 ::  依赖: Node.js (含 npx)、Microsoft Edge
+::
+::  注意: npx 必须带 --yes。包未缓存时 npx 会交互式询问
+::        "Ok to proceed? (y)", 而本脚本把输出重定向到日志,
+::        提示不可见也无法回答, 进程会永久挂起直到超时。
 :: =====================================================================
 
 :: ========== 配置项 ==========
 set "PORT=3080"
 if not "%~1"=="" set "PORT=%~1"
 set "LOG_FILE=%TEMP%\dsh_start.log"
-set "MAX_WAIT=30"
+set "MAX_WAIT=60"
 
 :: ========== 0. 环境自检: Node.js / npx ==========
 where npx >nul 2>&1
@@ -56,18 +60,22 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%PORT% "') do (
     taskkill /f /pid %%a >nul 2>&1
 )
 del /f /q "%LOG_FILE%" >nul 2>&1
-timeout /t 1 /nobreak >nul
+:: 用 ping 代替 timeout: timeout 在 stdin 被重定向时会直接失败
+ping -n 2 127.0.0.1 >nul
 
 :: ========== 3. 后台启动 DSH 服务, 输出重定向到日志 ==========
+::  --yes 让 npx 在包未缓存时自动确认安装, 避免静默挂起
 echo [2/4] 正在启动 DeepSeek Harness 服务 ^(端口 %PORT%^)...
-start "" /min cmd /c "npx @deepseek-ai/dsh web --port %PORT% --no-open > "%LOG_FILE%" 2>&1"
+start "" /min cmd /c "npx --yes @deepseek-ai/dsh web --port %PORT% --no-open > "%LOG_FILE%" 2>&1"
 
 :: ========== 4. 轮询日志, 等待带 token 的完整访问地址 ==========
-echo [3/4] 正在等待服务就绪...
+echo [3/4] 正在等待服务就绪 ^(首次运行需下载依赖, 可能较慢^)
 set "count=0"
 
 :wait
-timeout /t 2 /nobreak >nul
+:: 用 ping 代替 timeout: timeout 在 stdin 被重定向时会直接失败
+ping -n 3 127.0.0.1 >nul
+<nul set /p "=."
 
 :: DSH 启动完成后会输出形如 "dsh web: http://127.0.0.1:3080/?token=xxx"
 for /f "tokens=3" %%u in ('findstr /c:"dsh web: http://" "%LOG_FILE%" 2^>nul') do (
@@ -76,21 +84,31 @@ for /f "tokens=3" %%u in ('findstr /c:"dsh web: http://" "%LOG_FILE%" 2^>nul') d
 )
 
 set /a count+=1
-if %count% geq %MAX_WAIT% (
-    echo.
-    echo [错误] 服务启动超时 ^(已等待 %MAX_WAIT% 次, 每次 2 秒^)
-    echo        请检查日志: %LOG_FILE%
-    echo.
-    pause
-    exit /b 1
-)
+if %count% geq %MAX_WAIT% goto timeout
 goto wait
+
+:: ========== 4b. 超时: 打印日志尾部便于定位 ==========
+::  刻意不用 ( ... ) 代码块, 避免日志内容中的括号破坏解析
+:timeout
+echo.
+echo.
+echo [错误] 服务启动超时 ^(已等待 %MAX_WAIT% 次, 每次 2 秒^)
+echo.
+echo   ---- 日志尾部内容 ----
+type "%LOG_FILE%" 2>nul
+echo   ----------------------
+echo.
+echo   完整日志: %LOG_FILE%
+echo.
+pause
+exit /b 1
 
 :: ========== 5. 用 Edge 应用模式打开 Web UI ==========
 ::  注意: 这里刻意不用 ( ... ) 代码块。EDGE_PATH 取值形如
 ::        C:\Program Files (x86)\...\msedge.exe, 展开进代码块时其中的
 ::        ")" 会提前闭合块, 导致 "was unexpected at this time" 报错。
 :open_browser
+echo.
 if defined EDGE_PATH goto edge_open
 
 echo [警告] 未找到 Microsoft Edge, 改用系统默认浏览器打开
