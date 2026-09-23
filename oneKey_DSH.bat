@@ -1,29 +1,38 @@
 @echo off
 chcp 65001 >nul
 setlocal
-title DeepSeek Harness 一键启动 (oneKey_DSH)
+title DeepSeek Harness 一键启动 v1.0.0 (oneKey_DSH)
 
 :: =====================================================================
-::  oneKey_DSH - DeepSeek Harness 一键启动脚本 (Windows 11 + Edge)
+::  oneKey_DSH v1.0.0 - DeepSeek Harness 一键启动脚本 (Windows 11 + Edge)
 ::
 ::  用途: 双击即可在后台启动 DSH 本地服务, 并自动用 Edge 应用模式
 ::        (独立窗口 / 无地址栏) 打开 Web UI。
 ::
 ::  用法: oneKey_DSH.bat            使用默认端口 3080
 ::        oneKey_DSH.bat 8080       指定端口
+::        oneKey_DSH.bat -v         查看版本号
 ::
-::  依赖: Node.js (含 npx)、Microsoft Edge
+::  依赖: Node.js (含 npx, 建议 22.19.0+)、Microsoft Edge
 ::
 ::  注意: npx 必须带 --yes。包未缓存时 npx 会交互式询问
 ::        "Ok to proceed? (y)", 而本脚本把输出重定向到日志,
 ::        提示不可见也无法回答, 进程会永久挂起直到超时。
+::
+::  变更记录: 见 CHANGELOG.md
 :: =====================================================================
 
 :: ========== 配置项 ==========
+::  版本号只有这一处定义, 同时驱动窗口标题与启动横幅
+set "APP_VER=1.0.0"
 set "PORT=3080"
 if not "%~1"=="" set "PORT=%~1"
 set "LOG_FILE=%TEMP%\dsh_start.log"
 set "MAX_WAIT=60"
+
+:: ========== 版本查询 ==========
+if /i "%~1"=="-v" goto show_version
+if /i "%~1"=="--version" goto show_version
 
 :: ========== 0. 环境自检: Node.js / npx ==========
 where npx >nul 2>&1
@@ -53,6 +62,10 @@ if not defined EDGE_PATH (
         if exist "%%~b" set "EDGE_PATH=%%~b"
     )
 )
+
+:: ========== 启动横幅 ==========
+echo oneKey_DSH v%APP_VER% - DeepSeek Harness 一键启动
+echo.
 
 :: ========== 2. 清理旧进程与旧日志 ==========
 echo [1/4] 正在清理占用端口 %PORT% 的旧进程...
@@ -119,4 +132,11 @@ exit /b 0
 echo [4/4] 正在以独立窗口打开界面...
 start "" "%EDGE_PATH%" --app="%FULL_URL%"
 
+exit /b 0
+
+:: ========== 版本信息 ==========
+:show_version
+echo oneKey_DSH v%APP_VER%
+echo DeepSeek Harness 一键启动脚本 ^(Windows + Edge^)
+echo 变更记录: https://github.com/haberwynne/oneKey_DSH/blob/main/CHANGELOG.md
 exit /b 0
