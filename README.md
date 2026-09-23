@@ -2,6 +2,8 @@
 
 > 双击一个 BAT，就能在独立窗口里跑起 DeepSeek Harness —— Windows 11 + Microsoft Edge 环境实测可用。
 
+当前版本 **v1.0.0** · 变更记录见 [CHANGELOG.md](CHANGELOG.md)
+
 一个对官方一键命令 `npx @deepseek-ai/dsh web` 的 Windows 封装脚本。它把"开终端 → 敲命令 → 复制带 token 的地址 → 粘进浏览器"这一串手动操作，压缩成一次双击。
 
 ## 为什么需要它
@@ -94,6 +96,47 @@ oneKey_DSH.bat 8080
 
 如 Edge 不在常见位置，脚本会尝试读注册表；仍找不到时会回退用系统默认浏览器打开。
 
+## 版本管理
+
+本项目遵循 [语义化版本 2.0.0](https://semver.org/lang/zh-CN/)，格式为 `主版本.次版本.修订号`：
+
+| 位 | 何时递增 | 示例 |
+|----|----------|------|
+| 主版本 | 有不兼容的变更（移除参数、改变默认行为等） | `1.x.x` → `2.0.0` |
+| 次版本 | 向下兼容地新增功能 | `1.0.x` → `1.1.0` |
+| 修订号 | 向下兼容地修复缺陷 | `1.0.0` → `1.0.1` |
+
+### 版本号定义在哪
+
+脚本内**只有一处**定义，位于「配置项」区块：
+
+```bat
+set "APP_VER=1.0.0"
+```
+
+它同时驱动窗口标题与启动横幅的显示，改这一处即可。查询当前版本：
+
+```bat
+oneKey_DSH.bat -v
+```
+
+```
+oneKey_DSH v1.0.0
+DeepSeek Harness 一键启动脚本 (Windows + Edge)
+变更记录: https://github.com/haberwynne/oneKey_DSH/blob/main/CHANGELOG.md
+```
+
+### 发版流程
+
+1. 修改 `oneKey_DSH.bat` 中「配置项」的 `APP_VER`
+2. 在 `CHANGELOG.md` 顶部新增对应版本条目，并清空 `[Unreleased]`
+3. 提交
+4. 打标签并发布 Release，标签名与 `APP_VER` 保持一致（加 `v` 前缀）：`APP_VER=1.0.1` 对应标签 `v1.0.1`
+5. 更新 `CHANGELOG.md` 末尾的版本对比链接
+
+> 标签可用 Git 命令创建：`git tag v1.0.1 && git push origin v1.0.1`；
+> 也可以在仓库页面的 Releases 里点「Draft a new release」通过网页创建。
+
 ## 常见问题
 
 ### 提示"未检测到 Node.js 环境"？
@@ -131,7 +174,8 @@ DSH 的访问地址是带 token 的，且服务重启后 token 会变。请始�
 
 ```
 oneKey_DSH/
-├── oneKey_DSH.bat      # 主脚本
+├── oneKey_DSH.bat      # 主脚本（版本号内嵌其中）
+├── CHANGELOG.md        # 更新日志
 ├── README.md           # 本文件
 ├── LICENSE             # MIT
 ├── .gitignore
